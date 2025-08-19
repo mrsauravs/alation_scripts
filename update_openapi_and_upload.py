@@ -202,8 +202,13 @@ def upload_to_readme(edited_path: Path, version: str, dry_run=False):
 
     api_id = get_api_id(api_name, version)
 
+    npx_path = shutil.which("npx")
+    if not npx_path:
+        logging.error("❌ 'npx' command not found in PATH. Please ensure Node.js is installed.")
+        sys.exit(1)
+
     command = [
-        "npx", "rdme", "openapi", str(edited_path),
+        npx_path, "rdme", "openapi", str(edited_path),
         "--useSpecVersion", "--key", README_API_KEY, "--version", version
     ]
     if api_id:
@@ -218,13 +223,31 @@ def upload_to_readme(edited_path: Path, version: str, dry_run=False):
         return
 
     try:
-        subprocess.run(command, check=True, text=True)
-        logging.info("✅ Upload complete.")
-    except FileNotFoundError:
-        logging.error("Error: rdme command not found.")
-        sys.exit(1)
-    except subprocess.CalledProcessError as e:
-        logging.error(f"rdme upload failed with code {e.returncode}")
+        process = subprocess.Popen(
+            command,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            encoding='utf-8'
+        )
+        for line in process.stdout:
+            clean = line.strip()
+            if not clean:
+                continue
+            if "error" in clean.lower():
+                logging.error(clean)
+            else:
+                logging.info(clean)
+        process.wait()
+
+        if process.returncode != 0:
+            logging.error(f"❌ rdme upload failed with exit code {process.returncode}")
+            sys.exit(process.returncode)
+        else:
+            logging.info("✅ Upload complete.")
+
+    except Exception as e:
+        logging.error(f"❌ Unexpected error while running 'rdme': {e}")
         sys.exit(1)
 
 def main():
