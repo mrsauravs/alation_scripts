@@ -106,7 +106,6 @@ def read_and_prep_openapi(file_path: Path, version: str):
     data = dict(items)
 
     data["info"]["version"] = version
-    data["servers"][0]["url"] = "{protocol}://{base-url}"
     data["servers"][0]["variables"]["base-url"]["default"] = "alation_domain"
     data["servers"][0]["variables"]["protocol"]["default"] = "https"
 
@@ -304,3 +303,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
