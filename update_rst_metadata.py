@@ -85,29 +85,28 @@ def add_metadata_to_file(file_path, metadata):
         'Deployment Type': 'deployment_type',
         'User Role': 'user_role',
         'Functional Area': 'functional_area',
-        'Topic Categories': 'topic_category',
+        'Topics': 'topics',
     }
 
     for csv_key, meta_key in field_mapping.items():
         value = metadata.get(csv_key)
         if pd.notna(value) and str(value).strip():
-            meta_lines_to_add.append(f"\t:{meta_key}: {str(value).strip()}")
+            # Sanitize the value: replace semicolons and normalize comma spacing.
+            sanitized_value_str = str(value).replace(';', ',')
+            # Split by comma, strip whitespace from each part, and join with ", "
+            items = [item.strip() for item in sanitized_value_str.split(',') if item.strip()]
+            final_value = ", ".join(items)
+            meta_lines_to_add.append(f"   :{meta_key}: {final_value}")
             
-    # Handle the combination of Primary and Supporting Keywords
-    primary_kw = metadata.get('Primary Keywords')
-    supporting_kw = metadata.get('Supporting Keywords')
-    
-    all_keywords_list = []
-    if pd.notna(primary_kw) and str(primary_kw).strip():
-        all_keywords_list.append(str(primary_kw).strip())
-    if pd.notna(supporting_kw) and str(supporting_kw).strip():
-        all_keywords_list.append(str(supporting_kw).strip())
-        
-    if all_keywords_list:
-        # Combine, split by comma, flatten into a set for uniqueness, and re-join
-        combined_str = ", ".join(all_keywords_list)
-        unique_keywords = sorted(list({k.strip() for k in combined_str.split(',') if k.strip()}))
-        meta_lines_to_add.append(f"\t:keywords: {', '.join(unique_keywords)}")
+    # Handle the "Keywords" column
+    keywords = metadata.get('Keywords')
+    if pd.notna(keywords) and str(keywords).strip():
+        # Clean the value by removing potential double quotes
+        cleaned_keywords = str(keywords).strip().strip('"')
+        # Split by comma, strip whitespace, ensure uniqueness, and re-join
+        unique_keywords = sorted(list({k.strip() for k in cleaned_keywords.split(',') if k.strip()}))
+        if unique_keywords:
+            meta_lines_to_add.append(f"   :keywords: {', '.join(unique_keywords)}")
 
     # Construct the final block if we have any metadata to add
     if meta_lines_to_add:
@@ -128,29 +127,45 @@ def add_metadata_to_file(file_path, metadata):
 
 def main():
     """
-    Main function to drive the script. Reads a CSV and updates .rst files.
+    Main function to drive the script. Finds a single CSV in the current
+    directory and uses it to update .rst files.
     """
-    csv_file = 'meta_install_and_config.csv'
+    # --- DYNAMICALLY FIND THE CSV FILE ---
+    # Find all files in the current directory ending with .csv
+    csv_files = [f for f in os.listdir('.') if f.endswith('.csv')]
+
+    if len(csv_files) == 0:
+        print("Error: No CSV file found in the current directory.")
+        print("Please place your final metadata CSV file here and run the script again.")
+        return
     
-    if not os.path.exists(csv_file):
-        print(f"Error: The file '{csv_file}' was not found.")
-        print("Please make sure the CSV file is in the same directory as this script.")
+    if len(csv_files) > 1:
+        print("Error: Multiple CSV files found in the current directory:")
+        for f in csv_files:
+            print(f" - {f}")
+        print("\nPlease ensure there is only one CSV file present and run the script again.")
         return
 
+    # If we get here, there is exactly one CSV file
+    csv_file = csv_files[0]
+    
     print(f"Reading metadata from '{csv_file}'...")
-    df = pd.read_csv(csv_file)
+    try:
+        df = pd.read_csv(csv_file)
+    except Exception as e:
+        print(f"Error: Could not read or parse the CSV file '{csv_file}'. Reason: {e}")
+        return
 
     # Define the columns that contain the metadata
     metadata_columns = [
-        'Primary Keywords', 'Supporting Keywords', 'Topic Categories',
-        'Functional Area', 'User Role', 'Deployment Type'
+        'Keywords', 'Topics', 'Functional Area', 'User Role', 'Deployment Type'
     ]
     
     # Assume the script is run from the root of the docs source directory
     # If your .rst files are in a subdirectory (e.g., 'source/'), change "" to "source"
     doc_base_path = "" 
 
-    print("Starting to process .rst files...")
+    print("\nStarting to process .rst files...")
     # Iterate through each row of the dataframe
     for index, row in df.iterrows():
         url = row.get('Page URL') # Use .get() for safety
