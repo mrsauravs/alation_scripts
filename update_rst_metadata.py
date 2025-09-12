@@ -1,8 +1,7 @@
 import pandas as pd
 import os
 import re
-import io
-import argparse  # Import the argparse library
+import argparse
 
 def get_rst_path_from_url(url, base_path=""):
     """
@@ -79,7 +78,7 @@ def add_metadata_to_file(file_path, metadata):
         print(f"Info: A '.. meta::' directive already exists in '{file_path}'. Skipping to avoid duplication.")
         return
 
-    # --- NEW METADATA BLOCK GENERATION ---
+    # --- METADATA BLOCK GENERATION ---
     meta_lines_to_add = []
     
     # Define the order and mapping from the CSV to the directive fields
@@ -98,7 +97,8 @@ def add_metadata_to_file(file_path, metadata):
             # Split by comma, strip whitespace from each part, and join with ", "
             items = [item.strip() for item in sanitized_value_str.split(',') if item.strip()]
             final_value = ", ".join(items)
-            meta_lines_to_add.append(f"\t:{meta_key}: {final_value}")
+            # Use three spaces for correct RST indentation instead of a tab.
+            meta_lines_to_add.append(f"   :{meta_key}: {final_value}")
             
     # Handle the "Keywords" column
     keywords = metadata.get('Keywords')
@@ -106,7 +106,8 @@ def add_metadata_to_file(file_path, metadata):
         # Split by comma, strip whitespace, ensure uniqueness, and re-join
         unique_keywords = sorted(list({k.strip() for k in str(keywords).split(',') if k.strip()}))
         if unique_keywords:
-            meta_lines_to_add.append(f"\t:keywords: {', '.join(unique_keywords)}")
+            # Use three spaces for correct RST indentation instead of a tab.
+            meta_lines_to_add.append(f"   :keywords: {', '.join(unique_keywords)}")
 
     # Construct the final block if we have any metadata to add
     if meta_lines_to_add:
@@ -129,65 +130,69 @@ def main():
     """
     Main function to drive the script. Reads a CSV and updates .rst files.
     """
-    # --- MODIFIED SECTION ---
-    # Set up argument parser to accept a filename from the command line
     parser = argparse.ArgumentParser(description="Inject metadata from a CSV file into Sphinx .rst files.")
     parser.add_argument("csv_file", help="The path to the input CSV file.")
     args = parser.parse_args()
 
-    csv_file = args.csv_file  # Use the filename provided by the user
+    csv_file = args.csv_file
     
     if not os.path.exists(csv_file):
         print(f"Error: The file '{csv_file}' was not found.")
         return
 
-    print(f"Reading and cleaning metadata from '{csv_file}'...")
+    print(f"Reading metadata from '{csv_file}'...")
     try:
-        # Pre-process the CSV in memory to fix formatting issues from Google Sheets.
-        cleaned_data = io.StringIO()
-        with open(csv_file, 'r', encoding='utf-8') as f:
-            for line in f:
-                stripped_line = line.strip()
-                # Check if the entire line is wrapped in quotes
-                if stripped_line.startswith('"') and stripped_line.endswith('"'):
-                    # Remove the outer quotes
-                    cleaned_line = stripped_line[1:-1]
-                    # Also, un-escape the double-quotes used for fields inside
-                    cleaned_line = cleaned_line.replace('""', '"')
-                    cleaned_data.write(cleaned_line + '\n')
-                else:
-                    # If not, write the line as-is
-                    cleaned_data.write(line)
-        
-        # Move the buffer's cursor to the beginning to be read by pandas
-        cleaned_data.seek(0)
-        
-        # Read the cleaned data from the in-memory buffer
-        df = pd.read_csv(cleaned_data)
+        # Use the simple, direct pandas reader for standard CSV files.
+        # The 'python' engine is more flexible with quotes and delimiters.
+        df = pd.read_csv(csv_file, engine='python', index_col=False)
 
     except Exception as e:
         print(f"Error: Could not parse the CSV file. Please ensure it is formatted correctly. Details: {e}")
         return
+        
+    if df.empty:
+        print("Warning: The CSV file was processed, but no data rows were found. Please check the file content and format.")
+        return
+    else:
+        print(f"Successfully parsed {len(df)} data rows.")
+        
+    # Clean up column names by stripping any extra whitespace
+    df.columns = df.columns.str.strip()
+    print(f"Detected columns in CSV: {df.columns.tolist()}")
 
-    # Define the columns that contain the metadata
+    # --- Dynamically find the URL column to make the script more robust ---
+    url_column_found = None
+    possible_url_columns = ['Page URL', 'URL']
+    
+    for col in df.columns:
+        if col in possible_url_columns:
+            url_column_found = col
+            break
+
+    if not url_column_found:
+        print(f"\nError: Could not find a URL column in the CSV.")
+        print(f"The script looked for one of these names: {possible_url_columns}")
+        return
+    
+    print(f"Using '{url_column_found}' as the URL column for processing.")
+    
     metadata_columns = [
         'Keywords', 'Topics', 'Functional Area', 'User Role', 'Deployment Type'
     ]
     
     doc_base_path = "" 
 
-    print("Starting to process .rst files...")
-    # Iterate through each row of the dataframe
+    print("\nStarting to process .rst files...")
     for index, row in df.iterrows():
-        url = row.get('Page URL')
+        print(f"Processing row {index + 2}/{len(df) + 1}...")
+        url = row.get(url_column_found)
         if not url or pd.isna(url):
-            print(f"Warning: Skipping row {index + 2} due to missing or invalid URL.")
+            print(f"Warning: Skipping row {index + 2} due to missing or invalid URL. Row data: {row.to_dict()}")
             continue
 
         rst_path = get_rst_path_from_url(url, doc_base_path)
         
         if rst_path:
-            # Create a dictionary of metadata for the current row
             metadata = {col: row.get(col) for col in metadata_columns}
             add_metadata_to_file(rst_path, metadata)
     
