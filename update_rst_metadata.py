@@ -2,6 +2,7 @@ import pandas as pd
 import os
 import re
 import io
+import argparse  # Import the argparse library
 
 def get_rst_path_from_url(url, base_path=""):
     """
@@ -128,11 +129,16 @@ def main():
     """
     Main function to drive the script. Reads a CSV and updates .rst files.
     """
-    csv_file = 'meta_output_batch_gs.csv'
+    # --- MODIFIED SECTION ---
+    # Set up argument parser to accept a filename from the command line
+    parser = argparse.ArgumentParser(description="Inject metadata from a CSV file into Sphinx .rst files.")
+    parser.add_argument("csv_file", help="The path to the input CSV file.")
+    args = parser.parse_args()
+
+    csv_file = args.csv_file  # Use the filename provided by the user
     
     if not os.path.exists(csv_file):
         print(f"Error: The file '{csv_file}' was not found.")
-        print("Please make sure the CSV file is in the same directory as this script.")
         return
 
     print(f"Reading and cleaning metadata from '{csv_file}'...")
