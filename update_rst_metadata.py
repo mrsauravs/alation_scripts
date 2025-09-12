@@ -1,6 +1,7 @@
 import pandas as pd
 import os
 import re
+import io
 
 def get_rst_path_from_url(url, base_path=""):
     """
@@ -96,17 +97,15 @@ def add_metadata_to_file(file_path, metadata):
             # Split by comma, strip whitespace from each part, and join with ", "
             items = [item.strip() for item in sanitized_value_str.split(',') if item.strip()]
             final_value = ", ".join(items)
-            meta_lines_to_add.append(f"   :{meta_key}: {final_value}")
+            meta_lines_to_add.append(f"\t:{meta_key}: {final_value}")
             
     # Handle the "Keywords" column
     keywords = metadata.get('Keywords')
     if pd.notna(keywords) and str(keywords).strip():
-        # Clean the value by removing potential double quotes
-        cleaned_keywords = str(keywords).strip().strip('"')
         # Split by comma, strip whitespace, ensure uniqueness, and re-join
-        unique_keywords = sorted(list({k.strip() for k in cleaned_keywords.split(',') if k.strip()}))
+        unique_keywords = sorted(list({k.strip() for k in str(keywords).split(',') if k.strip()}))
         if unique_keywords:
-            meta_lines_to_add.append(f"   :keywords: {', '.join(unique_keywords)}")
+            meta_lines_to_add.append(f"\t:keywords: {', '.join(unique_keywords)}")
 
     # Construct the final block if we have any metadata to add
     if meta_lines_to_add:
@@ -127,33 +126,41 @@ def add_metadata_to_file(file_path, metadata):
 
 def main():
     """
-    Main function to drive the script. Finds a single CSV in the current
-    directory and uses it to update .rst files.
+    Main function to drive the script. Reads a CSV and updates .rst files.
     """
-    # --- DYNAMICALLY FIND THE CSV FILE ---
-    # Find all files in the current directory ending with .csv
-    csv_files = [f for f in os.listdir('.') if f.endswith('.csv')]
-
-    if len(csv_files) == 0:
-        print("Error: No CSV file found in the current directory.")
-        print("Please place your final metadata CSV file here and run the script again.")
-        return
+    csv_file = 'meta_output_batch_gs.csv'
     
-    if len(csv_files) > 1:
-        print("Error: Multiple CSV files found in the current directory:")
-        for f in csv_files:
-            print(f" - {f}")
-        print("\nPlease ensure there is only one CSV file present and run the script again.")
+    if not os.path.exists(csv_file):
+        print(f"Error: The file '{csv_file}' was not found.")
+        print("Please make sure the CSV file is in the same directory as this script.")
         return
 
-    # If we get here, there is exactly one CSV file
-    csv_file = csv_files[0]
-    
-    print(f"Reading metadata from '{csv_file}'...")
+    print(f"Reading and cleaning metadata from '{csv_file}'...")
     try:
-        df = pd.read_csv(csv_file)
+        # Pre-process the CSV in memory to fix formatting issues from Google Sheets.
+        cleaned_data = io.StringIO()
+        with open(csv_file, 'r', encoding='utf-8') as f:
+            for line in f:
+                stripped_line = line.strip()
+                # Check if the entire line is wrapped in quotes
+                if stripped_line.startswith('"') and stripped_line.endswith('"'):
+                    # Remove the outer quotes
+                    cleaned_line = stripped_line[1:-1]
+                    # Also, un-escape the double-quotes used for fields inside
+                    cleaned_line = cleaned_line.replace('""', '"')
+                    cleaned_data.write(cleaned_line + '\n')
+                else:
+                    # If not, write the line as-is
+                    cleaned_data.write(line)
+        
+        # Move the buffer's cursor to the beginning to be read by pandas
+        cleaned_data.seek(0)
+        
+        # Read the cleaned data from the in-memory buffer
+        df = pd.read_csv(cleaned_data)
+
     except Exception as e:
-        print(f"Error: Could not read or parse the CSV file '{csv_file}'. Reason: {e}")
+        print(f"Error: Could not parse the CSV file. Please ensure it is formatted correctly. Details: {e}")
         return
 
     # Define the columns that contain the metadata
@@ -161,16 +168,14 @@ def main():
         'Keywords', 'Topics', 'Functional Area', 'User Role', 'Deployment Type'
     ]
     
-    # Assume the script is run from the root of the docs source directory
-    # If your .rst files are in a subdirectory (e.g., 'source/'), change "" to "source"
     doc_base_path = "" 
 
-    print("\nStarting to process .rst files...")
+    print("Starting to process .rst files...")
     # Iterate through each row of the dataframe
     for index, row in df.iterrows():
-        url = row.get('Page URL') # Use .get() for safety
-        if not url:
-            print(f"Warning: Skipping row {index + 2} due to missing URL.")
+        url = row.get('Page URL')
+        if not url or pd.isna(url):
+            print(f"Warning: Skipping row {index + 2} due to missing or invalid URL.")
             continue
 
         rst_path = get_rst_path_from_url(url, doc_base_path)
