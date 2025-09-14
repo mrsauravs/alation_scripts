@@ -40,13 +40,14 @@ def get_rst_path_from_url(url, base_path=""):
     
     return full_path
 
-def add_metadata_to_file(file_path, metadata):
+def add_metadata_to_file(file_path, metadata, force_overwrite=False):
     """
-    Adds a formatted .. meta:: directive to an .rst file just after the title.
+    Adds or overwrites a formatted .. meta:: directive in an .rst file.
 
     Args:
         file_path (str): The path to the .rst file to be modified.
         metadata (dict): A dictionary containing the metadata to add.
+        force_overwrite (bool): If True, overwrites any existing meta directive.
     """
     try:
         with open(file_path, 'r', encoding='utf-8') as f:
@@ -56,26 +57,6 @@ def add_metadata_to_file(file_path, metadata):
         return
     except Exception as e:
         print(f"Error reading file '{file_path}': {e}")
-        return
-
-    # Find the page header, which is underlined with '=' characters.
-    underline_index = -1
-    for i in range(1, len(lines)):
-        line_content = lines[i].strip()
-        # Only match lines that consist solely of '=' characters.
-        if line_content and all(c == '=' for c in line_content):
-            # Ensure the line above it (the title) is not blank.
-            if lines[i-1].strip():
-                underline_index = i
-                break
-    
-    if underline_index == -1:
-        print(f"Warning: Could not find a page header underlined with '=' in '{file_path}'. Skipping.")
-        return
-
-    # Check if a meta directive already exists to avoid duplication
-    if any(".. meta::" in line for line in lines):
-        print(f"Info: A '.. meta::' directive already exists in '{file_path}'. Skipping to avoid duplication.")
         return
 
     # --- METADATA BLOCK GENERATION ---
@@ -109,19 +90,63 @@ def add_metadata_to_file(file_path, metadata):
             # Use three spaces for correct RST indentation instead of a tab.
             meta_lines_to_add.append(f"   :keywords: {', '.join(unique_keywords)}")
 
-    # Construct the final block if we have any metadata to add
-    if meta_lines_to_add:
-        full_meta_block = "\n" + ".. meta::\n" + "\n".join(meta_lines_to_add) + "\n"
-        lines.insert(underline_index + 1, full_meta_block)
-    else:
+    if not meta_lines_to_add:
         print(f"Info: No metadata to add for '{file_path}'. Skipping.")
         return
+
+    # --- CHECK FOR AND HANDLE EXISTING META DIRECTIVE ---
+    meta_start_index = -1
+    for i, line in enumerate(lines):
+        if ".. meta::" in line:
+            meta_start_index = i
+            break
+            
+    if meta_start_index != -1:
+        if not force_overwrite:
+            print(f"Info: '.. meta::' exists in '{file_path}'. Use -f to overwrite. Skipping.")
+            return
+        else:
+            print(f"Info: Found existing '.. meta::' in '{file_path}'. Overwriting due to -f flag.")
+            # Find the end of the existing meta block
+            meta_end_index = meta_start_index + 1
+            while meta_end_index < len(lines):
+                line_content = lines[meta_end_index]
+                # The block ends when a line has content but is not indented
+                if line_content.strip() and not line_content.startswith((' ', '\t')):
+                    break
+                meta_end_index += 1
+            
+            # Remove the old block (including any surrounding blank lines handled by insertion)
+            del lines[meta_start_index:meta_end_index]
+            # Remove the blank line that might have been before the old meta block
+            if meta_start_index > 0 and not lines[meta_start_index - 1].strip():
+                del lines[meta_start_index - 1]
+
+
+    # --- FIND INSERTION POINT AND ADD NEW META BLOCK ---
+    underline_index = -1
+    for i in range(1, len(lines)):
+        line_content = lines[i].strip()
+        # Only match lines that consist solely of '=' characters.
+        if line_content and all(c == '=' for c in line_content):
+            # Ensure the line above it (the title) is not blank.
+            if lines[i-1].strip():
+                underline_index = i
+                break
+    
+    if underline_index == -1:
+        print(f"Warning: Could not find a page header underlined with '=' in '{file_path}'. Skipping.")
+        return
+
+    # Construct the final block
+    full_meta_block = "\n" + ".. meta::\n" + "\n".join(meta_lines_to_add) + "\n"
+    lines.insert(underline_index + 1, full_meta_block)
 
     # Write the modified content back to the file
     try:
         with open(file_path, 'w', encoding='utf-8') as f:
             f.writelines(lines)
-        print(f"Successfully added metadata to {file_path}")
+        print(f"Successfully updated metadata in {file_path}")
     except IOError as e:
         print(f"Error: Could not write to file '{file_path}': {e}")
 
@@ -132,6 +157,12 @@ def main():
     """
     parser = argparse.ArgumentParser(description="Inject metadata from a CSV file into Sphinx .rst files.")
     parser.add_argument("csv_file", help="The path to the input CSV file.")
+    # Add the force overwrite argument
+    parser.add_argument(
+        "-f", "--force",
+        action="store_true",
+        help="Force overwrite of existing .. meta:: directives in files."
+    )
     args = parser.parse_args()
 
     csv_file = args.csv_file
@@ -194,7 +225,7 @@ def main():
         
         if rst_path:
             metadata = {col: row.get(col) for col in metadata_columns}
-            add_metadata_to_file(rst_path, metadata)
+            add_metadata_to_file(rst_path, metadata, force_overwrite=args.force)
     
     print("\nProcessing complete.")
 
