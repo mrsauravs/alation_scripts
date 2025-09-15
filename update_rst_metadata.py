@@ -139,7 +139,8 @@ def add_metadata_to_file(file_path, metadata, force_overwrite=False):
         return
 
     # Construct the final block
-    full_meta_block = "\n" + ".. meta::\n" + "\n".join(meta_lines_to_add) + "\n"
+    # MODIFIED LINE: Added an extra '\n' at the end to ensure a blank line after the block.
+    full_meta_block = "\n" + ".. meta::\n" + "\n".join(meta_lines_to_add) + "\n\n"
     lines.insert(underline_index + 1, full_meta_block)
 
     # Write the modified content back to the file
