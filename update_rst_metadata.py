@@ -75,9 +75,10 @@ def add_metadata_to_file(file_path, metadata, force_overwrite=False):
         if pd.notna(value) and str(value).strip():
             # Sanitize the value: replace semicolons and normalize comma spacing.
             sanitized_value_str = str(value).replace(';', ',')
-            # Split by comma, strip whitespace from each part, and join with ", "
+            # Split by comma, strip whitespace from each part, and join with " ; "
             items = [item.strip() for item in sanitized_value_str.split(',') if item.strip()]
-            final_value = ", ".join(items)
+            # MODIFIED LINE: Changed separator to a semicolon with spaces.
+            final_value = " ; ".join(items)
             # Use three spaces for correct RST indentation instead of a tab.
             meta_lines_to_add.append(f"   :{meta_key}: {final_value}")
             
@@ -88,7 +89,8 @@ def add_metadata_to_file(file_path, metadata, force_overwrite=False):
         unique_keywords = sorted(list({k.strip() for k in str(keywords).split(',') if k.strip()}))
         if unique_keywords:
             # Use three spaces for correct RST indentation instead of a tab.
-            meta_lines_to_add.append(f"   :keywords: {', '.join(unique_keywords)}")
+            # MODIFIED LINE: Changed separator to a semicolon with spaces.
+            meta_lines_to_add.append(f"   :keywords: {' ; '.join(unique_keywords)}")
 
     if not meta_lines_to_add:
         print(f"Info: No metadata to add for '{file_path}'. Skipping.")
@@ -139,7 +141,6 @@ def add_metadata_to_file(file_path, metadata, force_overwrite=False):
         return
 
     # Construct the final block
-    # MODIFIED LINE: Added an extra '\n' at the end to ensure a blank line after the block.
     full_meta_block = "\n" + ".. meta::\n" + "\n".join(meta_lines_to_add) + "\n\n"
     lines.insert(underline_index + 1, full_meta_block)
 
